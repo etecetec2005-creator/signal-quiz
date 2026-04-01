@@ -141,7 +141,7 @@ def fetch_quizzes(category):
 st.title("🚉 AIクイズで確認 検査標準（信号）")
 
 # iPhone SE等の小型端末向けにフォントサイズを微調整するCSS
-# ※ unsafe_allow_html=True が正しい記述です
+# 注：以下の unsafe_allow_html=True が正しい記述です
 st.markdown("""
     <style>
     /* カテゴリー選択ボックスの文字サイズを調整 */
@@ -151,6 +151,11 @@ st.markdown("""
     /* ラベルの文字サイズ */
     .stSelectbox label {
         font-size: 13px !important;
+    }
+    /* ボタン内のテキストが長い場合に折り返す設定 */
+    .stButton button div p {
+        white-space: normal !important;
+        word-break: break-all !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -189,7 +194,7 @@ else:
             label = f"{c_num}. {choice_text}"
             
             if st.button(label, key=f"q{idx}_btn{i}", disabled=already_answered, use_container_width=True):
-                # 回答履歴として「選択したテキスト全体」を保存
+                # 回答履歴としてラベルを保存
                 st.session_state.user_answers[idx] = label
                 if c_num == q['answer']:
                     st.session_state.total_score += 1
@@ -198,16 +203,18 @@ else:
         # 回答後の履歴・フィードバック表示
         if already_answered:
             user_choice_label = st.session_state.user_answers[idx]
-            # 保存したラベルが正解の番号(1〜4)で始まっているか判定
             is_correct = user_choice_label.startswith(q['answer'])
             
             if is_correct:
                 st.success(f"⭕ 正解！")
-                st.markdown(f"**あなたの回答:** {user_choice_label}")
             else:
                 st.error(f"❌ 不正解...")
-                st.markdown(f"**あなたの回答:** {user_choice_label}")
-                # 正解のテキストも表示するように改良
+            
+            # 回答履歴を常に表示
+            st.markdown(f"**あなたの回答:** {user_choice_label}")
+            
+            # 不正解時は正解の内容も表示
+            if not is_correct:
                 correct_idx = int(q['answer']) - 1
                 st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
             

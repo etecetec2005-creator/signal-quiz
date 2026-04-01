@@ -13,41 +13,48 @@ MODEL_NAME = "gemini-2.5-pro"
 st.set_page_config(page_title="AIクイズ 検査標準（信号）", layout="centered")
 
 # ==========================================
-# 【最重要】iPhone SE 画面最適化 CSS
+# 【修正版】iPhone SE 完璧表示 CSS
 # ==========================================
 st.markdown("""
     <style>
-    /* 1. 選択後のボックス内のテキストを折り返す */
+    /* 1. 選択ボックス（selectbox）の枠を文字に合わせて自動で広げる */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+        height: auto !important;
+        min-height: 45px !important;
+    }
+    
+    /* 2. 選択された文字の表示エリア：折り返しを許可し、高さを固定しない */
     div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
         white-space: normal !important;
         word-break: break-all !important;
         font-size: 14px !important;
-        line-height: 1.4 !important;
-        padding: 5px !important;
+        line-height: 1.5 !important; /* 行間を広げて下切れを防止 */
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+        height: auto !important;
     }
 
-    /* 2. ドロップダウンリスト（選択肢一覧）のテキストを折り返す */
-    /* Streamlitのリストは画面最前面のpopoverレイヤーにあるため、広範囲に適用 */
+    /* 3. ドロップダウンリスト（開いた時の項目）の文字切れ防止 */
     div[data-baseweb="popover"] ul li {
         white-space: normal !important;
         word-break: break-all !important;
         font-size: 14px !important;
-        line-height: 1.3 !important;
-        padding-top: 12px !important;
-        padding-bottom: 12px !important;
+        line-height: 1.4 !important;
+        padding: 12px 10px !important; /* 上下に十分な余白を確保 */
         border-bottom: 0.5px solid #eee;
+        height: auto !important;
     }
 
-    /* 3. サイドバー自体の幅をモバイルで最適化 */
+    /* 4. サイドバーの幅をiPhone SEに最適化 */
     section[data-testid="stSidebar"] {
         width: 85vw !important;
     }
 
-    /* 4. クイズの回答ボタン：文字を中央に寄せ、必ず折り返す */
+    /* 5. 回答ボタンの文字切れ・高さ不足の解消 */
     .stButton > button {
         width: 100% !important;
         height: auto !important;
-        min-height: 50px !important;
+        min-height: 55px !important;
         padding: 10px !important;
     }
     .stButton button div p {
@@ -56,12 +63,6 @@ st.markdown("""
         font-size: 15px !important;
         line-height: 1.3 !important;
         text-align: left !important;
-    }
-    
-    /* 5. 解説エリアの文字サイズ調整 */
-    .stExpander div p {
-        font-size: 14px !important;
-        line-height: 1.5 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -182,7 +183,6 @@ st.title("🚉 AIクイズ 検査標準（信号）")
 
 with st.sidebar:
     st.header("メニュー")
-    # カテゴリー選択
     selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
     
     if st.button("クイズを開始", type="primary", use_container_width=True):
@@ -196,7 +196,7 @@ with st.sidebar:
             st.rerun()
 
 if not st.session_state.quiz_list:
-    st.info("左上のメニュー（＞マーク）からカテゴリーを選んで開始してください。")
+    st.info("サイドバーからカテゴリーを選んで開始してください。")
 else:
     for idx, q in enumerate(st.session_state.quiz_list):
         st.markdown(f"#### 第 {idx+1} 問")
@@ -204,7 +204,6 @@ else:
         
         already_answered = idx in st.session_state.user_answers
         
-        # 回答ボタン（縦並び・折り返し対応）
         for i in range(4):
             c_num = str(i + 1)
             choice_label = f"{c_num}. {q['choices'][i]}"
@@ -215,17 +214,15 @@ else:
                     st.session_state.total_score += 1
                 st.rerun()
 
-        # 回答後の履歴・解説
         if already_answered:
             user_ans = st.session_state.user_answers[idx]
             is_correct = user_ans.startswith(q['answer'])
-            
             if is_correct:
                 st.success("⭕ 正解！")
             else:
                 st.error("❌ 不正解...")
             
-            st.markdown(f"**あなたの回答:** {user_ans}")
+            st.markdown(f"**回答:** {user_ans}")
             if not is_correct:
                 correct_idx = int(q['answer']) - 1
                 st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
@@ -234,7 +231,6 @@ else:
                 st.write(q['explanation'])
         st.divider()
 
-    # スコア発表
     if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
         st.balloons()
         st.header("🏁 結果発表")

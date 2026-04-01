@@ -140,6 +140,21 @@ def fetch_quizzes(category):
 # タイトルを更新
 st.title("🚉 AIクイズで確認 検査標準（信号）")
 
+# iPhone SE等の小型端末向けにフォントサイズを微調整するCSS
+# ※ unsafe_allow_html=True が正しい記述です
+st.markdown("""
+    <style>
+    /* カテゴリー選択ボックスの文字サイズを調整 */
+    div[data-baseweb="select"] {
+        font-size: 14px !important;
+    }
+    /* ラベルの文字サイズ */
+    .stSelectbox label {
+        font-size: 13px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # サイドバー設定
 with st.sidebar:
     st.header("メニュー")
@@ -192,7 +207,9 @@ else:
             else:
                 st.error(f"❌ 不正解...")
                 st.markdown(f"**あなたの回答:** {user_choice_label}")
-                st.markdown(f"**正解:** {q['answer']}. {q['choices'][int(q['answer'])-1]}")
+                # 正解のテキストも表示するように改良
+                correct_idx = int(q['answer']) - 1
+                st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
             
             with st.expander("解説を確認する", expanded=True):
                 st.write(q['explanation'])

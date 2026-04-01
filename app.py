@@ -5,26 +5,29 @@ import re
 # ==========================================
 # 1. 設定と機密情報
 # ==========================================
+# ※ Streamlit CloudのSecretsに "JAPANAI_API_KEY" を設定してください
 API_KEY = st.secrets["JAPANAI_API_KEY"]
 API_URL = "https://api.japan-ai.co.jp/chat/v2"
 ARTIFACT_ID = "0ba8d856-0804-4778-ab66-6eef6537915a"
 MODEL_NAME = "gemini-2.5-pro"
 
-# iPhone SE等の小型端末向けにフォントサイズを微調整するCSS
 st.set_page_config(page_title="AIクイズで確認 検査標準（信号）", layout="centered")
 
+# iPhone SE等の小型端末向けにフォントサイズを微調整するCSS
 st.markdown("""
     <style>
-    /* カテゴリー選択ボックスの文字サイズを調整 */
     div[data-baseweb="select"] {
         font-size: 14px !important;
     }
-    /* ラベルの文字サイズ */
     .stSelectbox label {
         font-size: 13px !important;
     }
+    .stButton button div p {
+        white-space: normal !important;
+        word-break: break-all !important;
+    }
     </style>
-    """, unsafe_allow_ Harris=True)
+    """, unsafe_allow_html=True)
 
 # カテゴリーリスト
 CATEGORIES = [
@@ -93,7 +96,7 @@ CATEGORIES = [
 if "quiz_list" not in st.session_state:
     st.session_state.quiz_list = []
 if "user_answers" not in st.session_state:
-    st.session_state.user_answers = {} # 問題番号: 選択したテキスト
+    st.session_state.user_answers = {}
 if "total_score" not in st.session_state:
     st.session_state.total_score = 0
 
@@ -132,114 +135,64 @@ def fetch_quizzes(category):
                 })
         return res
     except Exception as e:
-        st.error(f"エラー: {e}"); return []
+        st.error(f"エラー: {e}")
+        return []
 
 # ==========================================
 # 4. メイン描画
 # ==========================================
-# タイトルを更新
 st.title("🚉 AIクイズで確認 検査標準（信号）")
 
-# iPhone SE等の小型端末向けにフォントサイズを微調整するCSS
-# 注：以下の unsafe_allow_html=True が正しい記述です
-st.markdown("""
-    <style>
-    /* カテゴリー選択ボックスの文字サイズを調整 */
-    div[data-baseweb="select"] {
-        font-size: 14px !important;
-    }
-    /* ラベルの文字サイズ */
-    .stSelectbox label {
-        font-size: 13px !important;
-    }
-    /* ボタン内のテキストが長い場合に折り返す設定 */
-    .stButton button div p {
-        white-space: normal !important;
-        word-break: break-all !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# サイドバー設定
 with st.sidebar:
     st.header("メニュー")
     selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
     if st.button("クイズを開始", type="primary"):
         reset_game()
-        with st.spinner("AIが問題を作成中..."):
+        with st.spinner("生成中..."):
             st.session_state.quiz_list = fetch_quizzes(selected_cat)
-    
     if st.session_state.quiz_list:
-        st.divider()
-        if st.button("現在のクイズをクリア"):
+        if st.button("リセット"):
             reset_game()
             st.rerun()
 
-# クイズ未生成時の案内
 if not st.session_state.quiz_list:
-    st.info("サイドバーからカテゴリーを選び、「クイズを開始」ボタンを押してください。")
+    st.info("サイドバーからカテゴリーを選んでください。")
 else:
-    # クイズ本文の表示
     for idx, q in enumerate(st.session_state.quiz_list):
         st.markdown(f"#### 第 {idx+1} 問")
         st.write(q['question'])
         
-        # 回答済みかチェック
         already_answered = idx in st.session_state.user_answers
         
-        # 選択肢ボタン（iPhone SE対応：1列で表示）
         for i in range(4):
             c_num = str(i + 1)
-            choice_text = q['choices'][i]
-            label = f"{c_num}. {choice_text}"
+            label = f"{c_num}. {q['choices'][i]}"
             
-            if st.button(label, key=f"q{idx}_btn{i}", disabled=already_answered, use_container_width=True):
-                # 回答履歴としてラベルを保存
+            if st.button(label, key=f"q{idx}_{i}", disabled=already_answered, use_container_width=True):
                 st.session_state.user_answers[idx] = label
                 if c_num == q['answer']:
                     st.session_state.total_score += 1
                 st.rerun()
 
-        # 回答後の履歴・フィードバック表示
         if already_answered:
-            user_choice_label = st.session_state.user_answers[idx]
-            is_correct = user_choice_label.startswith(q['answer'])
-            
-            if is_correct:
+            ans = st.session_state.user_answers[idx]
+            if ans.startswith(q['answer']):
                 st.success(f"⭕ 正解！")
             else:
                 st.error(f"❌ 不正解...")
             
-            # 回答履歴を常に表示
-            st.markdown(f"**あなたの回答:** {user_choice_label}")
-            
-            # 不正解時は正解の内容も表示
-            if not is_correct:
-                correct_idx = int(q['answer']) - 1
-                st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
+            st.markdown(f"**回答履歴:** {ans}")
+            if not ans.startswith(q['answer']):
+                st.markdown(f"**正解:** {q['answer']}. {q['choices'][int(q['answer'])-1]}")
             
             with st.expander("解説を確認する", expanded=True):
                 st.write(q['explanation'])
-        
         st.divider()
 
-    # 全問回答後のスコア表示
     if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
         st.balloons()
         st.header("🏁 結果発表")
-        
-        score = st.session_state.total_score
-        total = len(st.session_state.quiz_list)
-        
-        st.metric(label="今回の正解数", value=f"{score} / {total}")
-        
-        if score == total:
-            st.success("🎊 パーフェクト！全問正解です。")
-        elif score >= 3:
-            st.info("✨ 素晴らしい！あともう一息でした。")
-        else:
-            st.warning("🧐 お疲れ様でした。解説を読んで復習しましょう。")
-        
+        st.metric("正解数", f"{st.session_state.total_score} / {len(st.session_state.quiz_list)}")
         if st.button("もう一度挑戦する", type="primary", use_container_width=True):
             reset_game()
             st.rerun()

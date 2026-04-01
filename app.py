@@ -49,7 +49,7 @@ CATEGORIES = [
     "踏切警報機（踏切警報機柱）", "踏切遮断機（電気踏切遮断機）", "踏切制御子（閉電路形（検測車非走行区間））",
     "踏切制御子（閉電路形（検測車走行区間））", "踏切制御子（開電路形（検測車非走行区間））",
     "踏切制御子（開電路形（検測車走行区間））", "踏切機器類（各種）", "踏切支障報知装置",
-    "踏切支障報知装置（踏切障害物検知装置）", "踏切支障報知装置（大型支障物検知装置）", "表示装置（特殊信号発光機）",
+    "踏切支障報知装置（踏切障害物検検知装置）", "踏切支障報知装置（大型支障物検知装置）", "表示装置（特殊信号発光機）",
     "電子踏切制御器", "踏切電源機器（整流器）", "踏切電源機器（鉛蓄電池）", "踏切電源機器（保安器（F形））",
     "踏切器具箱類（器具箱）", "踏切器具箱類（接続箱）", "直流軌道回路", "パルス軌道回路",
     "AFO軌道回路（AFO軌道回路）", "商用軌道回路", "信号ケーブル", "支持物（コンクリート柱）", "支持物（木柱）",
@@ -74,7 +74,7 @@ CATEGORIES = [
 ]
 
 # ==========================================
-# 2. セッション状態の管理
+# 2. セッション管理
 # ==========================================
 if "quiz_list" not in st.session_state:
     st.session_state.quiz_list = []
@@ -89,7 +89,7 @@ def reset_game():
     st.session_state.total_score = 0
 
 # ==========================================
-# 3. AI連携・パース
+# 3. 解析関数
 # ==========================================
 def parse_tag(text, tag):
     pattern = rf"{tag}:?\s*(.*?)(?=\n【|$)"
@@ -97,111 +97,105 @@ def parse_tag(text, tag):
     return match.group(1).strip() if match else ""
 
 def fetch_quizzes(category):
-    prompt = f"データセット資料に基づき、「{category}」に関する4択クイズを【5問】作成してください。"
-    prompt += ("\n各問題は必ず以下のフォーマットで記述し、問題の間には「===」を入れて区切ってください。"
-               "\n【問題】:（問題文）\n【選択肢1】:（内容）\n【選択肢2】:（内容）\n【選択肢3】:（内容）\n【選択肢4】:（内容）"
-               "\n【正解】:（数字1～4）\n【解説】:（解説文）")
-
+    prompt = f"データセット資料に基づき、「{category}」に関する4択クイズを【5問】作成してください。\n"
+    prompt += ("各問題は必ず以下のフォーマットで記述し、問題の間には「===」を入れてください。\n"
+               "【問題】:（問題文）\n【選択肢1】:（内容）\n【選択肢2】:（内容）\n【選択肢3】:（内容）\n【選択肢4】:（内容）\n"
+               "【正解】:（数字1～4）\n【解説】:（解説文）")
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
     payload = {"model": MODEL_NAME, "prompt": prompt, "stream": False, "temperature": 0.8, "artifactIds": [ARTIFACT_ID]}
-
     try:
         response = requests.post(API_URL, headers=headers, json=payload)
         response.raise_for_status()
         ai_text = response.json().get("chatMessage", "")
         blocks = ai_text.split("===")
-        results = []
+        res = []
         for b in blocks:
             if "【問題】" in b:
-                results.append({
+                res.append({
                     "question": parse_tag(b, "【問題】"),
                     "choices": [parse_tag(b, f"【選択肢{i}】") for i in range(1, 5)],
                     "answer": parse_tag(b, "【正解】"),
                     "explanation": parse_tag(b, "【解説】")
                 })
-        return results
+        return res
     except Exception as e:
-        st.error(f"APIエラー: {e}")
-        return []
+        st.error(f"通信エラー: {e}"); return []
 
 # ==========================================
-# 4. メインUI
+# 4. メイン描画
 # ==========================================
 st.title("🚉 信号設備 習熟度テスト")
 
 with st.sidebar:
     st.header("メニュー")
     selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
-    if st.button("クイズを開始する", type="primary"):
+    if st.button("クイズを開始", type="primary"):
         reset_game()
-        with st.spinner("生成中..."):
+        with st.spinner("AIが問題を作成中..."):
             st.session_state.quiz_list = fetch_quizzes(selected_cat)
+    
+    if st.session_state.quiz_list:
+        st.divider()
+        if st.button("現在のクイズをリセット"):
+            reset_game()
+            st.rerun()
 
+# クイズ未生成時の案内
 if not st.session_state.quiz_list:
-    st.info("サイドバーからカテゴリーを選んで開始してください。")
+    st.info("サイドバーからカテゴリーを選び、「クイズを開始」ボタンを押してください。")
 else:
+    # クイズ本文のループ表示
     for idx, q in enumerate(st.session_state.quiz_list):
-        st.markdown(f"### 第 {idx+1} 問")
+        st.markdown(f"#### 第 {idx+1} 問")
         st.write(q['question'])
         
+        # すでに回答済みか判定
         already_answered = idx in st.session_state.user_answers
         
-        # 選択肢の並び順を修正 (1, 2, 3, 4 の順に配置)
-        cols = st.columns(2)
-        # i=0,1,2,3 の順でループ
+        # モバイル対応：カラム（列）を使わず、1行ずつボタンを表示することで
+        # 確実に 1 -> 2 -> 3 -> 4 の順序を維持します
         for i in range(4):
             c_num = str(i + 1)
-            label = f"{c_num}. {q['choices'][i]}"
-            # カラム0に1,2問目、カラム1に3,4問目ではなく、
-            # 左列に1,3、右列に2,4という見た目順になるよう修正
-            target_col = cols[i % 2] 
+            btn_label = f"{c_num}. {q['choices'][i]}"
             
-            if target_col.button(label, key=f"q{idx}_c{i}", disabled=already_answered, use_container_width=True):
+            # ボタン生成
+            if st.button(btn_label, key=f"q{idx}_btn{i}", disabled=already_answered, use_container_width=True):
+                # 回答を記録
                 st.session_state.user_answers[idx] = c_num
                 if c_num == q['answer']:
                     st.session_state.total_score += 1
                 st.rerun()
 
+        # 回答後のフィードバック表示
         if already_answered:
-            user_ans = st.session_state.user_answers[idx]
-            if user_ans == q['answer']:
+            user_choice = st.session_state.user_answers[idx]
+            if user_choice == q['answer']:
                 st.success(f"⭕ 正解！")
             else:
-                st.error(f"❌ 不正解... (正解: {q['answer']})")
+                st.error(f"❌ 不正解... (正解は {q['answer']} です)")
+            
             with st.expander("解説を確認する", expanded=True):
                 st.write(q['explanation'])
+        
         st.divider()
 
-    # ==========================================
-    # 5. スコア表示と最終リザルト
-    # ==========================================
-    # すべての問題に回答し終えたかチェック
+    # すべての問題に回答した後のスコア判定
     if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
-        st.balloons()  # お祝いアニメーション
+        st.balloons()
+        st.header("🏁 テスト完了！")
         
         score = st.session_state.total_score
         total = len(st.session_state.quiz_list)
         
-        st.header("🏁 テスト終了！")
+        st.metric(label="今回のスコア", value=f"{score} / {total}")
         
-        # 大きな数字でスコアを表示
-        st.metric(label="今回の正解数", value=f"{score} / {total}")
-        
-        # スコアに応じたフィードバック
         if score == total:
-            st.success("🎊 パーフェクト！全問正解です。素晴らしい習熟度ですね！")
+            st.success("🎊 パーフェクト！素晴らしい成績です。")
         elif score >= 3:
-            st.info("✨ 合格点です！あともう少しで満点でした。")
+            st.info("✨ 合格点です！この調子で頑張りましょう。")
         else:
-            st.warning("🧐 お疲れ様でした。もう一度資料を確認して、再挑戦してみましょう。")
+            st.warning("🧐 お疲れ様でした。解説を読んで復習しましょう！")
         
-        # 再挑戦ボタン
-        if st.button("もう一度同じカテゴリーで挑戦する", use_container_width=True):
+        if st.button("もう一度挑戦する", type="primary", use_container_width=True):
             reset_game()
             st.rerun()
-
-# ------------------------------------------------------------------------------
-# 開発者メモ：
-# 選択肢の並び（1, 2, 3, 4）を確実に左から右へ並べるため、
-# 前段のループで target_col = cols[i % 2] を使用しています。
-# ------------------------------------------------------------------------------

@@ -13,11 +13,11 @@ MODEL_NAME = "gemini-2.5-pro"
 st.set_page_config(page_title="AIクイズ 検査標準（信号）", layout="centered")
 
 # ==========================================
-# iPhone SE 最適化 CSS（改行・文字切れ対策）
+# 【修正版】iPhone SE 完璧表示 CSS
 # ==========================================
 st.markdown("""
     <style>
-    /* 1. 選択ボックスの「選択済みテキスト」の省略を解除し改行を強制 */
+    /* 1. 選択ボックス内のテキスト改行を強制 */
     div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
         white-space: normal !important;
         overflow: visible !important;
@@ -26,14 +26,13 @@ st.markdown("""
         line-height: 1.4 !important;
     }
     
-    /* 2. 選択ボックス自体の高さを自動調整 */
     div[data-testid="stSelectbox"] div[data-baseweb="select"] {
         height: auto !important;
         min-height: 3rem !important;
         padding: 5px 0 !important;
     }
 
-    /* 3. ドロップダウン（開いた時）のリスト項目もすべて改行を許可 */
+    /* 2. ドロップダウン（開いた時）のリスト項目を改行 */
     div[data-baseweb="popover"] li div {
         white-space: normal !important;
         word-break: break-all !important;
@@ -46,23 +45,30 @@ st.markdown("""
         border-bottom: 1px solid #f0f2f6;
     }
 
-    /* 4. サイドバーの幅をモバイルに最適化 */
+    /* 3. サイドバーの幅をモバイルに最適化 */
     section[data-testid="stSidebar"] {
         width: 80vw !important;
     }
 
-    /* 5. クイズ回答ボタンの文字も確実に改行 */
+    /* 4. クイズ回答ボタンの文字を確実に改行 */
+    .stButton > button {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 55px !important;
+    }
     .stButton > button div p {
         white-space: normal !important;
         word-break: break-word !important;
         text-align: left !important;
+        font-size: 15px !important;
+        line-height: 1.3 !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # カテゴリーリスト
 CATEGORIES = [
-    "すべて", "単線自動閉そく装置", "特殊自動閉そく装置", "電子閉そく装置（無線式・簡易無線式）",
+    "すべて", "単線自動閉そく装置", "特殊自動閉そく装置", "電子閉そく装置",
     "電気信号機（色灯式信号機）", "合図器", "標識類", "諸標類", "電気転てつ機", 
     "転てつ転換鎖錠装置", "回路制御器", "継電連動装置", "電子連動装置", "列車集中制御装置", 
     "ATS装置", "踏切警報機", "踏切遮断機", "踏切制御子", "踏切支障報知装置", "軌道回路", 
@@ -133,12 +139,12 @@ with st.sidebar:
             st.session_state.quiz_list = fetch_quizzes(selected_cat)
     
     if st.session_state.quiz_list:
-        if st.button("リセットして戻る", use_container_width=True):
+        if st.button("リセット", use_container_width=True):
             reset_game()
             st.rerun()
 
 if not st.session_state.quiz_list:
-    st.info("左側のメニューからカテゴリーを選んで開始してください。")
+    st.info("サイドバーからカテゴリーを選んで開始してください。")
 else:
     for idx, q in enumerate(st.session_state.quiz_list):
         st.markdown(f"#### 第 {idx+1} 問")
@@ -146,6 +152,7 @@ else:
         
         already_answered = idx in st.session_state.user_answers
         
+        # 回答ボタン
         for i in range(4):
             c_num = str(i + 1)
             choice_label = f"{c_num}. {q['choices'][i]}"
@@ -156,34 +163,38 @@ else:
                     st.session_state.total_score += 1
                 st.rerun()
 
+        # 回答後のフィードバック表示（ここを復元しました）
         if already_answered:
             user_ans = st.session_state.user_answers[idx]
             is_correct = user_ans.startswith(q['answer'])
+            
             if is_correct:
                 st.success("⭕ 正解！")
             else:
                 st.error("❌ 不正解...")
             
+            # 自分が選んだものと、正解を明示する
+            st.markdown(f"**あなたの回答:** {user_ans}")
+            if not is_correct:
+                correct_idx = int(q['answer']) - 1
+                st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
+            
             with st.expander("解説を確認する", expanded=True):
                 st.write(q['explanation'])
         st.divider()
 
-    # ==========================================
-    # 結果発表セクション（条件付き演出）
-    # ==========================================
+    # スコア発表（演出の条件分岐）
     if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
         st.header("🏁 結果発表")
         score = st.session_state.total_score
-        full_marks = len(st.session_state.quiz_list)
-        
-        st.metric("正解数", f"{score} / {full_marks}")
+        st.metric("正解数", f"{score} / {len(st.session_state.quiz_list)}")
 
         if score >= 4:
-            st.balloons() # 4問以上は風船
-            st.success("おめでとうございます！素晴らしい成績です。")
+            st.balloons()
+            st.success("合格圏内です！おめでとうございます！")
         else:
-            st.snow() # 3問以下は雪（静かな演出）
-            st.warning("お疲れ様でした。もう一度復習してみましょう。")
+            st.snow()
+            st.warning("もう少し頑張りましょう。")
 
         if st.button("もう一度挑戦", type="primary", use_container_width=True):
             reset_game()

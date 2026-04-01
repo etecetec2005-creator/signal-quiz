@@ -10,36 +10,58 @@ API_URL = "https://api.japan-ai.co.jp/chat/v2"
 ARTIFACT_ID = "0ba8d856-0804-4778-ab66-6eef6537915a"
 MODEL_NAME = "gemini-2.5-pro"
 
-# ページ設定
-st.set_page_config(page_title="AIクイズで確認 検査標準（信号）", layout="centered")
+st.set_page_config(page_title="AIクイズ 検査標準（信号）", layout="centered")
 
-# 【iPhone SE対応】カテゴリー欄の折り返しと文字サイズ調整用CSS
+# ==========================================
+# 【最重要】iPhone SE 画面最適化 CSS
+# ==========================================
 st.markdown("""
     <style>
-    /* 1. カテゴリー選択肢（未選択時・選択済み）の折り返し許可 */
-    div[data-baseweb="select"] > div {
-        white-space: normal !important;
-        font-size: 13px !important;
-        line-height: 1.3 !important;
-        min-height: 40px !important;
-    }
-    /* 2. ドロップダウンリスト内の各項目の折り返し許可 */
-    ul[role="listbox"] li {
-        white-space: normal !important;
-        word-wrap: break-word !important;
-        font-size: 13px !important;
-        padding-top: 10px !important;
-        padding-bottom: 10px !important;
-    }
-    /* 3. 選択ボックス全体のラベル（上の文字） */
-    .stSelectbox label {
-        font-size: 12px !important;
-    }
-    /* 4. クイズの選択肢ボタン内の文字折り返し */
-    .stButton button div p {
+    /* 1. 選択後のボックス内のテキストを折り返す */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
         white-space: normal !important;
         word-break: break-all !important;
-        line-height: 1.2 !important;
+        font-size: 14px !important;
+        line-height: 1.4 !important;
+        padding: 5px !important;
+    }
+
+    /* 2. ドロップダウンリスト（選択肢一覧）のテキストを折り返す */
+    /* Streamlitのリストは画面最前面のpopoverレイヤーにあるため、広範囲に適用 */
+    div[data-baseweb="popover"] ul li {
+        white-space: normal !important;
+        word-break: break-all !important;
+        font-size: 14px !important;
+        line-height: 1.3 !important;
+        padding-top: 12px !important;
+        padding-bottom: 12px !important;
+        border-bottom: 0.5px solid #eee;
+    }
+
+    /* 3. サイドバー自体の幅をモバイルで最適化 */
+    section[data-testid="stSidebar"] {
+        width: 85vw !important;
+    }
+
+    /* 4. クイズの回答ボタン：文字を中央に寄せ、必ず折り返す */
+    .stButton > button {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 50px !important;
+        padding: 10px !important;
+    }
+    .stButton button div p {
+        white-space: normal !important;
+        word-break: break-word !important;
+        font-size: 15px !important;
+        line-height: 1.3 !important;
+        text-align: left !important;
+    }
+    
+    /* 5. 解説エリアの文字サイズ調整 */
+    .stExpander div p {
+        font-size: 14px !important;
+        line-height: 1.5 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -156,23 +178,25 @@ def fetch_quizzes(category):
 # ==========================================
 # 4. メイン描画
 # ==========================================
-st.title("🚉 AIクイズで確認 検査標準（信号）")
+st.title("🚉 AIクイズ 検査標準（信号）")
 
 with st.sidebar:
     st.header("メニュー")
-    # ここでカテゴリーを選択
+    # カテゴリー選択
     selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
-    if st.button("クイズを開始", type="primary"):
+    
+    if st.button("クイズを開始", type="primary", use_container_width=True):
         reset_game()
         with st.spinner("AIが生成中..."):
             st.session_state.quiz_list = fetch_quizzes(selected_cat)
+    
     if st.session_state.quiz_list:
-        if st.button("リセット"):
+        if st.button("リセット", use_container_width=True):
             reset_game()
             st.rerun()
 
 if not st.session_state.quiz_list:
-    st.info("サイドバーからカテゴリーを選んでください。")
+    st.info("左上のメニュー（＞マーク）からカテゴリーを選んで開始してください。")
 else:
     for idx, q in enumerate(st.session_state.quiz_list):
         st.markdown(f"#### 第 {idx+1} 問")
@@ -180,19 +204,18 @@ else:
         
         already_answered = idx in st.session_state.user_answers
         
-        # 選択肢を1列に並べる（1,2,3,4の順）
+        # 回答ボタン（縦並び・折り返し対応）
         for i in range(4):
             c_num = str(i + 1)
             choice_label = f"{c_num}. {q['choices'][i]}"
             
             if st.button(choice_label, key=f"q{idx}_{i}", disabled=already_answered, use_container_width=True):
-                # ユーザーの回答を記録
                 st.session_state.user_answers[idx] = choice_label
                 if c_num == q['answer']:
                     st.session_state.total_score += 1
                 st.rerun()
 
-        # 回答後の表示（履歴）
+        # 回答後の履歴・解説
         if already_answered:
             user_ans = st.session_state.user_answers[idx]
             is_correct = user_ans.startswith(q['answer'])
@@ -202,7 +225,7 @@ else:
             else:
                 st.error("❌ 不正解...")
             
-            st.markdown(f"**回答履歴:** {user_ans}")
+            st.markdown(f"**あなたの回答:** {user_ans}")
             if not is_correct:
                 correct_idx = int(q['answer']) - 1
                 st.markdown(f"**正解:** {q['answer']}. {q['choices'][correct_idx]}")
@@ -211,11 +234,11 @@ else:
                 st.write(q['explanation'])
         st.divider()
 
-    # 全問回答後の結果
+    # スコア発表
     if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
         st.balloons()
         st.header("🏁 結果発表")
         st.metric("正解数", f"{st.session_state.total_score} / {len(st.session_state.quiz_list)}")
-        if st.button("もう一度挑戦する", type="primary", use_container_width=True):
+        if st.button("もう一度挑戦", type="primary", use_container_width=True):
             reset_game()
             st.rerun()

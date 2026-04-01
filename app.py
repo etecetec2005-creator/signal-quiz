@@ -1,111 +1,230 @@
 import streamlit as st
 import requests
-import json
 import re
 
 # ==========================================
-# 1. 初期設定とSecretsの読み込み
+# 1. 設定と機密情報
 # ==========================================
-# st.secrets から設定を読み込む（コードに直接書かない）
+# APIキーは Streamlit Cloud の Settings > Secrets に設定してください
 API_KEY = st.secrets["JAPANAI_API_KEY"]
 API_URL = "https://api.japan-ai.co.jp/chat/v2"
 ARTIFACT_ID = "0ba8d856-0804-4778-ab66-6eef6537915a"
 MODEL_NAME = "gemini-2.5-pro"
 
-st.set_page_config(page_title="社内資料クイズアプリ", layout="wide")
-st.title("📖 社内資料クイズ生成")
+st.set_page_config(page_title="信号設備クイズ", layout="centered")
 
-# セッション状態の初期化（クイズデータを保持するため）
-if "quiz_data" not in st.session_state:
-    st.session_state.quiz_data = []
+# カテゴリーリスト（全項目）
+CATEGORIES = [
+    "すべて", "単線自動閉そく装置（単線自動閉そく装置）", "特殊自動閉そく装置（軌道回路検知式）", 
+    "電子閉そく装置（無線式・簡易無線式）", "電子閉そく装置（無線式）", "電子閉そく装置（簡易無線式）",
+    "電気信号機（集中監視あり）（色灯式信号機）", "電気信号機（集中監視なし）（色灯式信号機）",
+    "電気信号機（集中監視なし）（中継信号機）", "電気信号機（集中監視なし）（入換信号機）",
+    "電気信号機（集中監視なし）（誘導信号機）", "電気信号機（集中監視なし）（進路表示機）",
+    "電気信号機（集中監視なし）（進路予告器）", "電気信号機（集中監視なし）（手信号用代用器）",
+    "合図器（出発合図器）", "合図器（出発指示合図器）", "合図器（ブレーキ試験合図器）", "合図器（入換合図器）",
+    "標識類（灯具あり）（入換信号機識別標識）", "標識類（灯具あり）（入換標識（灯列式））",
+    "標識類（灯具あり）（入換標識（線路表示式））", "標識類（灯具あり）（入換標識反応灯）",
+    "標識類（灯具あり）（線路表示器）", "標識類（灯具あり）（出発反応標識）", "標識類（灯具あり）（列車停止標識）",
+    "標識類（灯具あり）（車両停止標識）", "標識類（灯具あり）（車止標識）", "標識類（灯具なし）（列車停止標識）",
+    "標識類（灯具なし）（車両停止標識）", "標識類（灯具なし）（車止標識）", "標識類（灯具なし）（閉そく信号標識）",
+    "諸標類（灯具あり）（番線表示灯）", "諸標類（灯具あり）（限界表示灯）", "諸標類（灯具あり）（線路別表示灯）",
+    "諸標類（灯具あり）（乗務員呼出表示灯）", "諸標類（灯具あり）（移動・機器取扱い禁止表示器）",
+    "諸標類（灯具なし）（番線表示標）", "諸標類（灯具なし）（誤出発防止地上子箇所標）",
+    "諸標類（灯具なし）（信号鳴呼位置標）", "諸標類（灯具なし）（停止限界標識）",
+    "電気転てつ機（状態監視有り（付属装置含む））", "電気転てつ機（状態監視無し（付属装置含む））",
+    "電気転てつ機（YS形（付属装置含む））", "発条転てつ機（付属装置、電磁鎖錠器含む）",
+    "転てつ転換鎖錠装置（転てつ転換機（付属装置含む））", "転てつ転換鎖錠装置（転てつ双動機（付属装置含む））",
+    "転てつ転換鎖錠装置（標識付転換機（付属装置含む））", "転てつ転換鎖錠装置（脱線器（付属装置含む））",
+    "回路制御器", "鉄管装置（転てつ双動機用）", "継電連動装置（連動制御盤）", "継電連動装置（継電連動機器）",
+    "電子連動装置（電子連動機（1形））", "電子連動装置（電子連動機（2形））", "電子連動装置（電子連動機（4形））",
+    "電子連動装置（電子連動機（ブロック式））", "電子連動装置（集中連動機（中央設備））", "電子連動装置（駅設備）",
+    "電子連動装置（集中連動機（駅設備））", "電子連動装置（集約連動機（中央設備））", "電子連動装置（集約連動機（駅設備））",
+    "電子連動装置（電子連動機（3形））", "列車集中制御装置（中央設備（4形））", "列車集中制御装置（中央設備（5形））",
+    "列車集中制御装置（中央設備（6形））", "列車集中制御装置（駅設備（4形））", "列車集中制御装置（駅設備（5形））",
+    "列車集中制御装置（駅設備（6形））", "自動進路制御装置（駅設備）", "列車運行状況表示装置（駅設備）",
+    "ATS装置（S形（検測車非走行区間））", "ATS装置（S形（検測車走行区間））", "ATS装置（SW形（検測車非走行区間））",
+    "ATS装置（SW形（検測車走行区間））", "ATS装置（SW形（機器））", "ATS装置（P形（検測車非走行区間））",
+    "ATS装置（P形（検測車走行区間））", "ATS装置（P形（機器））", "ATS装置（DW形（検測車非走行区間））",
+    "ATS装置（DW形（検測車走行区間））", "ATS装置（DW形（機器））", "分岐器速度制限警報装置（SW形（検測車非走行区間））",
+    "分岐器速度制限警報装置（SW形（検測車走行区間））", "分岐器速度制限警報装置（SW形（機器））",
+    "踏切警報機（踏切警報機柱）", "踏切遮断機（電気踏切遮断機）", "踏切制御子（閉電路形（検測車非走行区間））",
+    "踏切制御子（閉電路形（検測車走行区間））", "踏切制御子（開電路形（検測車非走行区間））",
+    "踏切制御子（開電路形（検測車走行区間））", "踏切機器類（各種）", "踏切支障報知装置",
+    "踏切支障報知装置（踏切障害物検知装置）", "踏切支障報知装置（大型支障物検知装置）", "表示装置（特殊信号発光機）",
+    "電子踏切制御器", "踏切電源機器（整流器）", "踏切電源機器（鉛蓄電池）", "踏切電源機器（保安器（F形））",
+    "踏切器具箱類（器具箱）", "踏切器具箱類（接続箱）", "直流軌道回路", "パルス軌道回路",
+    "AFO軌道回路（AFO軌道回路）", "商用軌道回路", "信号ケーブル", "支持物（コンクリート柱）", "支持物（木柱）",
+    "支持物（鉄柱）", "管路", "信号器具箱類（器具箱）", "信号器具箱類（接続箱）", "限界支障報知装置",
+    "落石警報裝置", "安全側線緊急防護裝置", "支障報知裝置（変位警報裝置）", "支障報知裝置（風速警報裝置）",
+    "支障報知裝置（橋桁防護裝置）", "橫取裝置用停止現示裝置", "トンネル内支障報知裝置", "落下物検知裝置",
+    "ホーム用非常ボタン装置", "接近警報装置（旅客用）", "旅客通路用接近表示装置", "固定式列車接近警報装置（表示灯式）",
+    "固定式列車接近警報裝置（警報音発生器式）", "諸設備踏切遮断機（電気踏切遮断機）", "諸設備踏切制御子（閉電路形（検測車非走行区間））",
+    "諸設備踏切制御子（閉電路形（検測車走行区間））", "諸設備踏切制御子（開電路形（検測車非走行区間））",
+    "諸設備踏切制御子（開電路形（検測車走行区間））", "諸設備機器類（各種）", "諸設備機器類（踏切故障検出器）",
+    "諸設備電子踏切制御器（電子踏切制御器）", "諸設備踏切支障報知裝置（諸設備踏切障害物検知裝置）",
+    "諸設備電源機器（整流器）", "諸設備電源機器（鉛蓄電池）", "諸設備電源機器（保安器（F形））",
+    "諸設備器具箱類（器具箱）", "諸設備器具箱類（接続箱）", "抑止表示装置（駅装置）",
+    "消防用設備（不活性ガス消火設備）", "消防用設備（ハロゲン化物消火設備）", "ブレーキ支援装置",
+    "発動発電機", "配電盤", "整流器", "自動電圧調整器", "蓄電池（鉛蓄電池）", "蓄電池（制御弁式鉛蓄電池）",
+    "商用軌道回路（状態監視有り）", "分倍周軌道回路（状態監視有り）", "100Hz 軌道回路（状態監視有り）",
+    "商用軌道回路（状態監視無し）", "商用軌道回路（状態監視無し（単線））", "分倍周軌道回路（状態監視無し）",
+    "分倍周軌道回路（状態監視無し（単線））", "100Hz 軌道回路（状態監視無し）", "分周軌道回路（状態監視有り）",
+    "分周軌道回路（状態監視無し）", "分周軌道回路（状態監視無し（単線））", "機器集中形AF軌道回路（機器集中形AF軌道回路）",
+    "機器集中形AF軌道回路（集中機器）", "無絶縁軌道回路（2電圧受電方式）", "長大軌道回路（長大軌道回路）",
+    "H・DC軌道回路", "H・AC軌道回路", "列車検知装置（MTD形）", "列車検知装置（MTD形（集中機器））", "80Hzコード軌道回路"
+]
 
 # ==========================================
-# 2. クイズ生成ロジック
+# 2. セッション状態（State）の管理
 # ==========================================
-def generate_quizzes(category):
+if "quiz_list" not in st.session_state:
+    st.session_state.quiz_list = []
+if "user_answers" not in st.session_state:
+    st.session_state.user_answers = {}
+if "total_score" not in st.session_state:
+    st.session_state.total_score = 0
+
+def reset_game():
+    st.session_state.quiz_list = []
+    st.session_state.user_answers = {}
+    st.session_state.total_score = 0
+
+# ==========================================
+# 3. AI連携・パース処理
+# ==========================================
+def parse_tag(text, tag):
+    pattern = rf"{tag}:?\s*(.*?)(?=\n【|$)"
+    match = re.search(pattern, text, re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+def fetch_quizzes_from_ai(category):
     prompt = f"データセット資料に基づき、「{category}」に関する4択クイズを【5問】作成してください。"
     if category == "すべて":
-        prompt += "\n指示：資料内の異なる設備項目から満遍なく5つ選び、それぞれ1問ずつ作成してください。"
+        prompt += "\n指示：資料内の異なる項目から満遍なく5つ選び、それぞれ1問ずつ作成してください。"
     
     prompt += ("\n各問題は必ず以下のフォーマットで記述し、問題の間には「===」を入れて区切ってください。"
                "\n【問題】:（問題文）\n【選択肢1】:（内容）\n【選択肢2】:（内容）\n【選択肢3】:（内容）\n【選択肢4】:（内容）"
                "\n【正解】:（数字1～4）\n【解説】:（解説文）")
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    }
-    
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
     payload = {
-        "model": MODEL_NAME,
-        "prompt": prompt,
-        "stream": False,
-        "temperature": 0.8,
-        "artifactIds": [ARTIFACT_ID]
+        "model": MODEL_NAME, "prompt": prompt, "stream": False, 
+        "temperature": 0.8, "artifactIds": [ARTIFACT_ID]
     }
 
-    with st.spinner("AIが問題を生成中..."):
-        try:
-            response = requests.post(API_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            ai_text = response.json().get("chatMessage", "")
-            
-            # クイズごとに分割してパース
-            blocks = ai_text.split("===")
-            quizzes = []
-            for block in blocks:
-                if "【問題】" in block:
-                    quizzes.append({
-                        "question": parse_tag(block, "【問題】"),
-                        "choices": [
-                            parse_tag(block, "【選択肢1】"),
-                            parse_tag(block, "【選択肢2】"),
-                            parse_tag(block, "【選択肢3】"),
-                            parse_tag(block, "【選択肢4】")
-                        ],
-                        "answer": parse_tag(block, "【正解】"),
-                        "explanation": parse_tag(block, "【解説】")
-                    })
-            return quizzes
-        except Exception as e:
-            st.error(f"エラーが発生しました: {e}")
-            return []
-
-def parse_tag(text, tag):
-    # VBAのQ_ParseTagと同様の処理
-    pattern = rf"{tag}:?\s*(.*?)(?=\n【|$)"
-    match = re.search(pattern, text, re.DOTALL)
-    return match.group(1).strip() if match else ""
+    try:
+        response = requests.post(API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        ai_text = response.json().get("chatMessage", "")
+        
+        blocks = ai_text.split("===")
+        results = []
+        for b in blocks:
+            if "【問題】" in b:
+                results.append({
+                    "question": parse_tag(b, "【問題】"),
+                    "choices": [parse_tag(b, f"【選択肢{i}】") for i in range(1, 5)],
+                    "answer": parse_tag(b, "【正解】"),
+                    "explanation": parse_tag(b, "【解説】")
+                })
+        return results
+    except Exception as e:
+        st.error(f"接続エラー: {e}")
+        return []
 
 # ==========================================
-# 3. 画面レイアウト
+# 4. メイン画面レイアウト
 # ==========================================
+st.title("🚉 鉄道信号設備 クイズ")
+
 with st.sidebar:
-    category = st.selectbox("カテゴリを選択", ["すべて", "無線式", "簡易無線式", "その他"]) # 必要に応じて変更
-    if st.button("クイズ生成", type="primary"):
-        st.session_state.quiz_data = generate_quizzes(category)
+    st.header("メニュー")
+    # st.selectboxは項目が多い場合、自動的に検索入力欄が付きます
+    selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
+    
+    if st.button("クイズを開始する", type="primary"):
+        reset_game()
+        with st.spinner("AIが問題を作成しています..."):
+            st.session_state.quiz_list = fetch_quizzes_from_ai(selected_cat)
+    
+    if st.session_state.quiz_list:
+        if st.button("最初からやり直す"):
+            reset_game()
+            st.rerun()
 
-if st.session_state.quiz_data:
-    for i, q in enumerate(st.session_state.quiz_data):
-        with st.container():
-            st.markdown(f"### 第 {i+1} 問")
-            st.write(q["question"])
-            
-            # ラジオボタンで回答選択
-            user_choice = st.radio(f"選択肢 (問{i+1})", 
-                                  [f"{j+1}: {c}" for j, c in enumerate(q["choices"])],
-                                  key=f"q_{i}", index=None)
-            
-            if st.button(f"解答を表示 (問{i+1})"):
-                if user_choice:
-                    user_ans_num = user_choice.split(":")[0]
-                    if user_ans_num == q["answer"]:
-                        st.success("✨ 正解！")
-                    else:
-                        st.error(f"❌ 残念！ 正解は {q['answer']} です。")
-                    st.info(f"**解説:** {q['explanation']}")
-                else:
-                    st.warning("回答を選択してください。")
-            st.divider()
-else:
-    st.info("左のサイドバーからカテゴリを選択して「クイズ生成」を押してください。")
+# クイズ未生成時の表示
+if not st.session_state.quiz_list:
+    st.info("サイドバーからカテゴリーを選び、「クイズを開始する」をクリックしてください。")
+    st.stop()
+
+# クイズ表示ループ
+for idx, q in enumerate(st.session_state.quiz_list):
+    st.markdown(f"### 第 {idx+1} 問")
+    st.write(q['question'])
+    
+    already_answered = idx in st.session_state.user_answers
+    
+    # 選択肢をボタンで表示
+    cols = st.columns(2)
+    for i, choice_text in enumerate(q['choices']):
+        c_num = str(i + 1)
+        # ボタンのラベル
+        label = f"{c_num}. {choice_text}"
+        
+        # ボタンクリック時の処理
+        if cols[i % 2].button(label, key=f"q{idx}_c{i}", disabled=already_answered, use_container_width=True):
+            st.session_state.user_answers[idx] = c_num
+            if c_num == q['answer']:
+                st.session_state.total_score += 1
+            st.rerun()
+
+    # 回答後のフィードバック
+    if already_answered:
+        user_ans = st.session_state.user_answers[idx]
+        if user_ans == q['answer']:
+            st.success(f"正解！ (選択: {user_ans})")
+        else:
+            st.error(f"不正解... 正解は {q['answer']} でした。 (選択: {user_ans})")
+        
+        with st.expander("解説を確認する", expanded=True):
+            st.write(q['explanation'])
+    st.divider()
+
+# ==========================================
+# 5. スコア判定と最終リザルト
+# ==========================================
+# すべての問題（5問）に回答し終えたかチェック
+if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
+    st.balloons()  # お祝いのアニメーション
+    
+    score = st.session_state.total_score
+    total = len(st.session_state.quiz_list)
+    
+    st.header("🏁 全問回答完了！")
+    
+    # メトリック表示（正解数 / 全問数）
+    st.metric(label="今回のスコア", value=f"{score} / {total}")
+    
+    # スコアに応じたフィードバックメッセージ
+    if score == total:
+        st.success("🎊 パーフェクト！全問正解です。素晴らしい知識ですね！")
+    elif score >= 3:
+        st.info("✨ 素晴らしい成績です！あともう一息で満点でした。")
+    else:
+        st.warning("🧐 お疲れ様でした。解説を読み込んで、もう一度復習してみましょう！")
+    
+    # 再挑戦ボタン
+    if st.button("もう一度同じカテゴリーで挑戦する"):
+        reset_game()
+        st.rerun()
+
+# ------------------------------------------------------------------------------
+# 補足：Streamlitでの実行方法
+# ------------------------------------------------------------------------------
+# 1. ローカル環境の場合：
+#    ターミナルで `streamlit run app.py` を実行。
+#
+# 2. Streamlit Cloudの場合：
+#    GitHubにこのファイルをプッシュし、管理画面の「Secrets」に
+#    JAPANAI_API_KEY = "あなたのAPIキー" を登録してください。
+# ------------------------------------------------------------------------------

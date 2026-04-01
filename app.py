@@ -5,7 +5,6 @@ import re
 # ==========================================
 # 1. 設定と機密情報
 # ==========================================
-# APIキーは Streamlit Cloud の Settings > Secrets に設定してください
 API_KEY = st.secrets["JAPANAI_API_KEY"]
 API_URL = "https://api.japan-ai.co.jp/chat/v2"
 ARTIFACT_ID = "0ba8d856-0804-4778-ab66-6eef6537915a"
@@ -13,7 +12,7 @@ MODEL_NAME = "gemini-2.5-pro"
 
 st.set_page_config(page_title="信号設備クイズ", layout="centered")
 
-# カテゴリーリスト（全項目）
+# カテゴリーリスト
 CATEGORIES = [
     "すべて", "単線自動閉そく装置（単線自動閉そく装置）", "特殊自動閉そく装置（軌道回路検知式）", 
     "電子閉そく装置（無線式・簡易無線式）", "電子閉そく装置（無線式）", "電子閉そく装置（簡易無線式）",
@@ -75,7 +74,7 @@ CATEGORIES = [
 ]
 
 # ==========================================
-# 2. セッション状態（State）の管理
+# 2. セッション状態の管理
 # ==========================================
 if "quiz_list" not in st.session_state:
     st.session_state.quiz_list = []
@@ -90,33 +89,26 @@ def reset_game():
     st.session_state.total_score = 0
 
 # ==========================================
-# 3. AI連携・パース処理
+# 3. AI連携・パース
 # ==========================================
 def parse_tag(text, tag):
     pattern = rf"{tag}:?\s*(.*?)(?=\n【|$)"
     match = re.search(pattern, text, re.DOTALL)
     return match.group(1).strip() if match else ""
 
-def fetch_quizzes_from_ai(category):
+def fetch_quizzes(category):
     prompt = f"データセット資料に基づき、「{category}」に関する4択クイズを【5問】作成してください。"
-    if category == "すべて":
-        prompt += "\n指示：資料内の異なる項目から満遍なく5つ選び、それぞれ1問ずつ作成してください。"
-    
     prompt += ("\n各問題は必ず以下のフォーマットで記述し、問題の間には「===」を入れて区切ってください。"
                "\n【問題】:（問題文）\n【選択肢1】:（内容）\n【選択肢2】:（内容）\n【選択肢3】:（内容）\n【選択肢4】:（内容）"
                "\n【正解】:（数字1～4）\n【解説】:（解説文）")
 
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
-    payload = {
-        "model": MODEL_NAME, "prompt": prompt, "stream": False, 
-        "temperature": 0.8, "artifactIds": [ARTIFACT_ID]
-    }
+    payload = {"model": MODEL_NAME, "prompt": prompt, "stream": False, "temperature": 0.8, "artifactIds": [ARTIFACT_ID]}
 
     try:
         response = requests.post(API_URL, headers=headers, json=payload)
         response.raise_for_status()
         ai_text = response.json().get("chatMessage", "")
-        
         blocks = ai_text.split("===")
         results = []
         for b in blocks:
@@ -129,102 +121,87 @@ def fetch_quizzes_from_ai(category):
                 })
         return results
     except Exception as e:
-        st.error(f"接続エラー: {e}")
+        st.error(f"APIエラー: {e}")
         return []
 
 # ==========================================
-# 4. メイン画面レイアウト
+# 4. メインUI
 # ==========================================
-st.title("🚉 鉄道信号設備 クイズ")
+st.title("🚉 信号設備 習熟度テスト")
 
 with st.sidebar:
     st.header("メニュー")
-    # st.selectboxは項目が多い場合、自動的に検索入力欄が付きます
     selected_cat = st.selectbox("カテゴリーを選択", CATEGORIES)
-    
     if st.button("クイズを開始する", type="primary"):
         reset_game()
-        with st.spinner("AIが問題を作成しています..."):
-            st.session_state.quiz_list = fetch_quizzes_from_ai(selected_cat)
-    
-    if st.session_state.quiz_list:
-        if st.button("最初からやり直す"):
+        with st.spinner("生成中..."):
+            st.session_state.quiz_list = fetch_quizzes(selected_cat)
+
+if not st.session_state.quiz_list:
+    st.info("サイドバーからカテゴリーを選んで開始してください。")
+else:
+    for idx, q in enumerate(st.session_state.quiz_list):
+        st.markdown(f"### 第 {idx+1} 問")
+        st.write(q['question'])
+        
+        already_answered = idx in st.session_state.user_answers
+        
+        # 選択肢の並び順を修正 (1, 2, 3, 4 の順に配置)
+        cols = st.columns(2)
+        # i=0,1,2,3 の順でループ
+        for i in range(4):
+            c_num = str(i + 1)
+            label = f"{c_num}. {q['choices'][i]}"
+            # カラム0に1,2問目、カラム1に3,4問目ではなく、
+            # 左列に1,3、右列に2,4という見た目順になるよう修正
+            target_col = cols[i % 2] 
+            
+            if target_col.button(label, key=f"q{idx}_c{i}", disabled=already_answered, use_container_width=True):
+                st.session_state.user_answers[idx] = c_num
+                if c_num == q['answer']:
+                    st.session_state.total_score += 1
+                st.rerun()
+
+        if already_answered:
+            user_ans = st.session_state.user_answers[idx]
+            if user_ans == q['answer']:
+                st.success(f"⭕ 正解！")
+            else:
+                st.error(f"❌ 不正解... (正解: {q['answer']})")
+            with st.expander("解説を確認する", expanded=True):
+                st.write(q['explanation'])
+        st.divider()
+
+    # ==========================================
+    # 5. スコア表示と最終リザルト
+    # ==========================================
+    # すべての問題に回答し終えたかチェック
+    if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
+        st.balloons()  # お祝いアニメーション
+        
+        score = st.session_state.total_score
+        total = len(st.session_state.quiz_list)
+        
+        st.header("🏁 テスト終了！")
+        
+        # 大きな数字でスコアを表示
+        st.metric(label="今回の正解数", value=f"{score} / {total}")
+        
+        # スコアに応じたフィードバック
+        if score == total:
+            st.success("🎊 パーフェクト！全問正解です。素晴らしい習熟度ですね！")
+        elif score >= 3:
+            st.info("✨ 合格点です！あともう少しで満点でした。")
+        else:
+            st.warning("🧐 お疲れ様でした。もう一度資料を確認して、再挑戦してみましょう。")
+        
+        # 再挑戦ボタン
+        if st.button("もう一度同じカテゴリーで挑戦する", use_container_width=True):
             reset_game()
             st.rerun()
 
-# クイズ未生成時の表示
-if not st.session_state.quiz_list:
-    st.info("サイドバーからカテゴリーを選び、「クイズを開始する」をクリックしてください。")
-    st.stop()
-
-# クイズ表示ループ
-for idx, q in enumerate(st.session_state.quiz_list):
-    st.markdown(f"### 第 {idx+1} 問")
-    st.write(q['question'])
-    
-    already_answered = idx in st.session_state.user_answers
-    
-    # 選択肢をボタンで表示
-    cols = st.columns(2)
-    for i, choice_text in enumerate(q['choices']):
-        c_num = str(i + 1)
-        # ボタンのラベル
-        label = f"{c_num}. {choice_text}"
-        
-        # ボタンクリック時の処理
-        if cols[i % 2].button(label, key=f"q{idx}_c{i}", disabled=already_answered, use_container_width=True):
-            st.session_state.user_answers[idx] = c_num
-            if c_num == q['answer']:
-                st.session_state.total_score += 1
-            st.rerun()
-
-    # 回答後のフィードバック
-    if already_answered:
-        user_ans = st.session_state.user_answers[idx]
-        if user_ans == q['answer']:
-            st.success(f"正解！ (選択: {user_ans})")
-        else:
-            st.error(f"不正解... 正解は {q['answer']} でした。 (選択: {user_ans})")
-        
-        with st.expander("解説を確認する", expanded=True):
-            st.write(q['explanation'])
-    st.divider()
-
-# ==========================================
-# 5. スコア判定と最終リザルト
-# ==========================================
-# すべての問題（5問）に回答し終えたかチェック
-if len(st.session_state.user_answers) == len(st.session_state.quiz_list):
-    st.balloons()  # お祝いのアニメーション
-    
-    score = st.session_state.total_score
-    total = len(st.session_state.quiz_list)
-    
-    st.header("🏁 全問回答完了！")
-    
-    # メトリック表示（正解数 / 全問数）
-    st.metric(label="今回のスコア", value=f"{score} / {total}")
-    
-    # スコアに応じたフィードバックメッセージ
-    if score == total:
-        st.success("🎊 パーフェクト！全問正解です。素晴らしい知識ですね！")
-    elif score >= 3:
-        st.info("✨ 素晴らしい成績です！あともう一息で満点でした。")
-    else:
-        st.warning("🧐 お疲れ様でした。解説を読み込んで、もう一度復習してみましょう！")
-    
-    # 再挑戦ボタン
-    if st.button("もう一度同じカテゴリーで挑戦する"):
-        reset_game()
-        st.rerun()
-
 # ------------------------------------------------------------------------------
-# 補足：Streamlitでの実行方法
-# ------------------------------------------------------------------------------
-# 1. ローカル環境の場合：
-#    ターミナルで `streamlit run app.py` を実行。
-#
-# 2. Streamlit Cloudの場合：
-#    GitHubにこのファイルをプッシュし、管理画面の「Secrets」に
-#    JAPANAI_API_KEY = "あなたのAPIキー" を登録してください。
+# 開発者メモ：
+# 選択肢の並び（1, 2, 3, 4）を確実に左から右へ並べるため、
+# 前段のループで target_col = cols[i % 2] を使用しています。
 # ------------------------------------------------------------------------------

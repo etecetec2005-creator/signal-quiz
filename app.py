@@ -299,9 +299,9 @@ else:
         score = st.session_state.total_score
         st.metric("正解数", f"{score} / {len(st.session_state.quiz_list)}")
 
-        if score >= 4:
+        if score >= 5:
             st.balloons()
-            st.success("素晴らしい！合格圏内です。")
+            st.success("素晴らしい！満点です。")
         else:
             st.snow()
             st.warning("お疲れ様でした。復習して再挑戦しましょう。")
